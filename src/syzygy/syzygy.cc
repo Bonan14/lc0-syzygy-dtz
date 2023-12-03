@@ -1599,7 +1599,9 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   int min_DTZ = 0xFFFF;
   for (const Move& move : pos.GetBoard().GenerateLegalMoves()) {
     Position next_pos = Position(pos, move);
-    const bool zeroing = next_pos.GetRule50Ply() == 0;
+    const bool zeroing = next_pos.GetRule50Ply() <= 99 || next_pos.GetRule50Ply() == 0
+                        && next_pos.GetBoard().IsUnderCheck() &&
+                        next_pos.GetBoard().GenerateLegalMoves().empty();
     // For zeroing moves we want the dtz of the move _before_ doing it,
     // otherwise we will get the dtz of the next move sequence. Search the
     // position after the move to get the score sign (because even in a winning
