@@ -1551,6 +1551,42 @@ WDLScore SyzygyTablebase::probe_wdl(const Position& pos, ProbeState* result) {
   return search(pos, result);
 }
 
+
+// This functions purpose is to build a tree of possible moves for a given position up to the specified depth,
+// considering special cases related to zeroing moves and mating positions.
+// Atleast thats what its supposed to do.
+
+void SyzygyTablebase::buildMoveTree(const Position& pos, int depth, int currentDepth, ProbeState* result, int& dtz,
+                                    std::vector<Move> legalMoves) {
+    // Stop recursion at the specified depth.
+    if (currentDepth >= depth) {
+        return;
+    }
+    // Iterate through the legal moves for the current position.
+    for (auto& move : legalMoves) {
+        // Create a new position after making the current move.
+        Position next_pos = Position(pos, move);
+        // Check if the move is a zeroing move, i.e., it results in a draw or mate.
+        bool zeroing = (next_pos.GetRule50Ply() + dtz) < 99 && 
+                        next_pos.GetBoard().IsUnderCheck();
+        bool zeroing_mate = next_pos.GetRule50Ply() == 0 &&
+                            next_pos.GetBoard().IsUnderCheck() &&
+                            next_pos.GetBoard().GenerateLegalMoves().empty();
+        // For zeroing moves, update the DTZ score and stop recursion.
+        if (zeroing_mate || zeroing) {
+            int subTreeDTZ = 1;
+            dtz = std::max(dtz, subTreeDTZ);
+        } else { 
+            // For non-zeroing moves, recursively build the move tree.
+            int subTreeDTZ = dtz;        
+            buildMoveTree(next_pos, depth, currentDepth + 1, result, subTreeDTZ, legalMoves);
+        }
+        // Add the current move to the list of legal moves.
+        legalMoves.push_back(move);
+    }
+}
+
+
 // Probe the DTZ table for a particular position.
 // If *result != FAIL, the probe was successful.
 // The return value is from the point of view of the side to move:
@@ -1578,51 +1614,83 @@ WDLScore SyzygyTablebase::probe_wdl(const Position& pos, ProbeState* result) {
 // then do not accept moves leading to dtz + 50-move-counter == 100.
 int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   *result = OK;
+  // Search for the WDL score
   const WDLScore wdl = search<true>(pos, result);
-  if (*result == FAIL || wdl == WDL_DRAW) {  // DTZ tables don't store draws
+  // Handle cases where the search fails or the position is a draw
+  if (*result == FAIL || wdl == WDL_DRAW) {
+    // DTZ tables don't store draws
     return 0;
   }
-  // DTZ stores a 'don't care' value in this case, or even a plain wrong one as
-  // in case the best move is a losing ep, so it cannot be probed.
-  if (*result == ZEROING_BEST_MOVE) return dtz_before_zeroing(wdl);
+  // Handle the case where the best move is a zeroing move
+  if (*result == ZEROING_BEST_MOVE) {
+    return dtz_before_zeroing(wdl);
+  }
+  // Initialize variables for raw result and DTZ
   int raw_result = 1;
   int dtz = impl_->probe_dtz_table(pos.GetBoard(), wdl, &raw_result);
+  // Update the result state
   *result = static_cast<ProbeState>(raw_result);
-  if (*result == FAIL) return 0;
+  // Get legal moves for the current position
+  auto tb_moves = pos.GetWhiteBoard().GenerateLegalMoves();
+  std::vector<Move> legalMoves = tb_moves;
+  // Check for positions where the side to move doesn't change
   if (*result != CHANGE_STM) {
+    // Clear the vector and fill them with legal moves for the current pos
+    // from our POV.
+    legalMoves.clear();
+    tb_moves = pos.GetBoard().GenerateLegalMoves();
+    // Return the DTZ score with additional adjustments based on WDL
     return (dtz + 1 +
             100 * (wdl == WDL_BLESSED_LOSS || wdl == WDL_CURSED_WIN)) *
            sign_of(wdl);
   }
-  // DTZ stores results for the other side, so we need to do a 1-ply search and
-  // find the winning move that minimizes DTZ.
+  // Handle positions where the side to move changes
+  if (*result == CHANGE_STM) {
+    // Clear the vector  and fill them with legal moves for the current pos
+    // from the opponents POV.
+    legalMoves.clear();
+    tb_moves = pos.GetThemBoard().GenerateLegalMoves();
+  }
+  // Initialize variable for the minimum DTZ
   int min_DTZ = 0xFFFF;
-  for (const Move& move : pos.GetBoard().GenerateLegalMoves()) {
+  // Iterate through legal moves and build the move tree
+  for (auto& move : legalMoves) {
     Position next_pos = Position(pos, move);
-    const bool zeroing = next_pos.GetRule50Ply() <= 99 || next_pos.GetRule50Ply() == 0
-                        && next_pos.GetBoard().IsUnderCheck() &&
+    bool zeroing = (next_pos.GetRule50Ply() + dtz) < 99 && next_pos.GetBoard().IsUnderCheck();
+    bool zeroing_mate = next_pos.GetRule50Ply() < 99 &&
+                        next_pos.GetBoard().IsUnderCheck() &&
                         next_pos.GetBoard().GenerateLegalMoves().empty();
-    // For zeroing moves we want the dtz of the move _before_ doing it,
-    // otherwise we will get the dtz of the next move sequence. Search the
-    // position after the move to get the score sign (because even in a winning
-    // position we could make a losing capture or going for a draw).
-    dtz = zeroing ? -dtz_before_zeroing(search(next_pos, result))
-                  : -probe_dtz(next_pos, result);
+    if (zeroing_mate) {
+      dtz = -dtz_before_zeroing(search(next_pos, result));
+    }
+    // For zeroing moves, initiate the move tree building.
+    if (zeroing) {
+      int dtz_ = -dtz_before_zeroing(search(next_pos, result));
+      // Specify the depth (3 for example).
+      buildMoveTree(next_pos, 3, 1, result, dtz_, legalMoves);
+      dtz = dtz_;
+    } else {
+      int dtz_ = -probe_dtz(next_pos, result);
+      buildMoveTree(next_pos, 3, 1, result, dtz_, legalMoves);
+      dtz = dtz_;
+    }
     // If the move mates, force minDTZ to 1
-    if (dtz == 1 && next_pos.GetBoard().IsUnderCheck() &&
-        next_pos.GetBoard().GenerateLegalMoves().empty()) {
+    if (dtz == 1 && next_pos.GetWhiteBoard().IsUnderCheck() &&
+        next_pos.GetWhiteBoard().GenerateLegalMoves().empty()) {
       min_DTZ = 1;
     }
     // Convert result from 1-ply search. Zeroing moves are already accounted by
     // dtz_before_zeroing() that returns the DTZ of the previous move.
-    if (!zeroing) dtz += sign_of(dtz);
+    if (!zeroing_mate || !zeroing) dtz += sign_of(dtz);
     // Skip the draws and if we are winning only pick positive dtz
     if (dtz < min_DTZ && sign_of(dtz) == sign_of(wdl)) min_DTZ = dtz;
+    // Check for a search failure
     if (*result == FAIL) return 0;
   }
-  // When there are no legal moves, the position is mate: we return -1
+  // When there are no legal moves, the position is mate: return -1
   return min_DTZ == 0xFFFF ? -1 : min_DTZ;
 }
+
 
 // Use the DTZ tables to rank root moves.
 //

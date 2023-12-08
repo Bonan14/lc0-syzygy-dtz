@@ -76,6 +76,10 @@ class SyzygyTablebase {
   // Result is only strictly valid for positions with 0 ply 50 move counter.
   // Probe state will return FAIL if the position is not in the tablebase.
   WDLScore probe_wdl(const Position& pos, ProbeState* result);
+  // Helps the dtz_probe build a tree to the specified depth in order
+  // to find mating moves that do not break the r50-move rule.
+  void buildMoveTree(const Position& pos, int depth, int currentDepth,
+                     ProbeState* result, int& dtz, std::vector<Move> legalMoves);
   // Probes DTZ tables for the given position to determine the number of ply
   // before a zeroing move under optimal play.
   // Thread safe.
