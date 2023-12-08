@@ -2000,6 +2000,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
           auto parent = node->GetParent();
           if (parent) {
             m = std::max(0.0f, parent->GetM() - 1.0f);
+          } 
         }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
