@@ -316,7 +316,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
           sign, true);
     }
     const auto q = edge.GetQ(default_q, draw_score);
-    if (edge.IsTerminal() && wl != 0.0f || edge.IsTbTerminal() && wl != 0.0f) {
+    if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
           std::round(edge.GetM(0.0f)) / 2 + (edge.IsTbTerminal()) ? 100 : 0,
           wl);
@@ -2000,9 +2000,6 @@ void SearchWorker::ExtendNode(Node* node, int depth,
           auto parent = node->GetParent();
           if (parent) {
             m = std::max(0.0f, parent->GetM() - 1.0f);
-          } else {
-              m = node->GetM();
-          }
         }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
