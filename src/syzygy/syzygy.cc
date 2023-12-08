@@ -1635,7 +1635,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   std::vector<Move> legalMoves = tb_moves;
   // Check for positions where the side to move doesn't change
   if (*result != CHANGE_STM) {
-    // Clear the vector and fill them with legal moves for the current pos
+    // Clear the vector and fill it with legal moves for the current pos
     // from our POV.
     legalMoves.clear();
     tb_moves = pos.GetBoard().GenerateLegalMoves();
@@ -1646,7 +1646,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   }
   // Handle positions where the side to move changes
   if (*result == CHANGE_STM) {
-    // Clear the vector  and fill them with legal moves for the current pos
+    // Clear the vector  and fill it with legal moves for the current pos
     // from the opponents POV.
     legalMoves.clear();
     tb_moves = pos.GetThemBoard().GenerateLegalMoves();
