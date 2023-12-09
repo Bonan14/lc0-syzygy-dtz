@@ -1563,11 +1563,12 @@ void SyzygyTablebase::buildMoveTree(const Position& pos, int depth, int currentD
         return;
     }
     // Iterate through the legal moves for the current position.
+    for (int m = 0; m < depth; m++) {
     for (auto& move : legalMoves) {
         // Create a new position after making the current move.
         Position next_pos = Position(pos, move);
         // Check if the move is a zeroing move, i.e., it results in a draw or mate.
-        bool zeroing_mate = next_pos.GetRule50Ply() == 0 &&
+        bool zeroing_mate = next_pos.GetRule50Ply() <= 99 &&
                             next_pos.GetBoard().IsUnderCheck() &&
                             next_pos.GetBoard().GenerateLegalMoves().empty();
         // For zeroing_mate moves, update the DTZ score and stop recursion.
@@ -1582,6 +1583,7 @@ void SyzygyTablebase::buildMoveTree(const Position& pos, int depth, int currentD
         // Add the current move to the list of legal moves.
         legalMoves.push_back(move);
     }
+  }
 }
 
 
