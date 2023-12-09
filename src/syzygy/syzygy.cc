@@ -1567,13 +1567,11 @@ void SyzygyTablebase::buildMoveTree(const Position& pos, int depth, int currentD
         // Create a new position after making the current move.
         Position next_pos = Position(pos, move);
         // Check if the move is a zeroing move, i.e., it results in a draw or mate.
-        bool zeroing = (next_pos.GetRule50Ply() + dtz) < 99 && 
-                        next_pos.GetBoard().IsUnderCheck();
         bool zeroing_mate = next_pos.GetRule50Ply() == 0 &&
                             next_pos.GetBoard().IsUnderCheck() &&
                             next_pos.GetBoard().GenerateLegalMoves().empty();
-        // For zeroing moves, update the DTZ score and stop recursion.
-        if (zeroing_mate || zeroing) {
+        // For zeroing_mate moves, update the DTZ score and stop recursion.
+        if (zeroing_mate) {
             int subTreeDTZ = 1;
             dtz = std::max(dtz, subTreeDTZ);
         } else { 
@@ -1656,32 +1654,22 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   // Iterate through legal moves and build the move tree
   for (auto& move : legalMoves) {
     Position next_pos = Position(pos, move);
-    bool zeroing = (next_pos.GetRule50Ply() + dtz) < 99 && next_pos.GetBoard().IsUnderCheck();
-    bool zeroing_mate = next_pos.GetRule50Ply() < 99 &&
+    bool zeroing_mate = next_pos.GetRule50Ply() == 0 &&
                         next_pos.GetBoard().IsUnderCheck() &&
                         next_pos.GetBoard().GenerateLegalMoves().empty();
     if (zeroing_mate) {
       dtz = -dtz_before_zeroing(search(next_pos, result));
-    }
-    // For zeroing moves, initiate the move tree building.
-    if (zeroing) {
-      int dtz_ = -dtz_before_zeroing(search(next_pos, result));
-      // Specify the depth (3 for example).
-      buildMoveTree(next_pos, 3, 1, result, dtz_, legalMoves);
-      dtz = dtz_;
+      if (dtz == 1) {
+          min_DTZ = 1;
+      }
     } else {
       int dtz_ = -probe_dtz(next_pos, result);
-      buildMoveTree(next_pos, 3, 1, result, dtz_, legalMoves);
+      buildMoveTree(next_pos, 6, 1, result, dtz_, legalMoves);
       dtz = dtz_;
-    }
-    // If the move mates, force minDTZ to 1
-    if (dtz == 1 && next_pos.GetWhiteBoard().IsUnderCheck() &&
-        next_pos.GetWhiteBoard().GenerateLegalMoves().empty()) {
-      min_DTZ = 1;
     }
     // Convert result from 1-ply search. Zeroing moves are already accounted by
     // dtz_before_zeroing() that returns the DTZ of the previous move.
-    if (!zeroing_mate || !zeroing) dtz += sign_of(dtz);
+    if (!zeroing_mate) dtz += sign_of(dtz);
     // Skip the draws and if we are winning only pick positive dtz
     if (dtz < min_DTZ && sign_of(dtz) == sign_of(wdl)) min_DTZ = dtz;
     // Check for a search failure
