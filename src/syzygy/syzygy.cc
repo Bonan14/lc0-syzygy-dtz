@@ -1563,7 +1563,7 @@ void SyzygyTablebase::buildMoveTree(const Position& pos, int depth, int currentD
         return;
     }
     // Iterate through the legal moves for the current position.
-    for (int m = 0; m < depth; m++) {
+    for (int d = 0; d < depth; d++) {
     for (auto& move : legalMoves) {
         // Create a new position after making the current move.
         Position next_pos = Position(pos, move);
@@ -1575,6 +1575,7 @@ void SyzygyTablebase::buildMoveTree(const Position& pos, int depth, int currentD
         if (zeroing_mate) {
             int subTreeDTZ = 1;
             dtz = std::max(dtz, subTreeDTZ);
+            currentDepth = depth;
         } else { 
             // For non-zeroing moves, recursively build the move tree.
             int subTreeDTZ = dtz;        
@@ -1655,8 +1656,9 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   int min_DTZ = 0xFFFF;
   // Iterate through legal moves and build the move tree
   for (auto& move : legalMoves) {
+    std::vector<Move> movetree_;
     Position next_pos = Position(pos, move);
-    bool zeroing_mate = next_pos.GetRule50Ply() == 0 &&
+    bool zeroing_mate = next_pos.GetRule50Ply() <= 99 &&
                         next_pos.GetBoard().IsUnderCheck() &&
                         next_pos.GetBoard().GenerateLegalMoves().empty();
     if (zeroing_mate) {
@@ -1666,7 +1668,9 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
       }
     } else {
       int dtz_ = -probe_dtz(next_pos, result);
-      buildMoveTree(next_pos, 6, 1, result, dtz_, legalMoves);
+      buildMoveTree(next_pos, 6, 1, result, dtz_, movetree_);
+      // Insert all elements from source vector(movetree) into destination vector(legalMoves) at the end.
+      legalMoves.insert(legalMoves.end(), movetree_.begin(), movetree_.end());
       dtz = dtz_;
     }
     // Convert result from 1-ply search. Zeroing moves are already accounted by
